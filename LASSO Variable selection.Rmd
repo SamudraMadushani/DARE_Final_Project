@@ -1,0 +1,50 @@
+---
+title: "LASSO Variable selection"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#preparation of data
+library(glmnet)
+library(readr)
+df <- read_csv("bole_layerfeatures .csv")
+df[is.na(df)] = 0
+df$Lat<- -df$Lat
+features <- df[,-1]
+features <- features[,-4]
+# normalisation
+features <- scale(features)
+```
+
+To determine what value to use for lambda, we’ll perform k-fold cross-validation and identify the lambda value that produces the lowest test mean squared error (MSE).
+
+```{r}
+#perform k-fold cross-validation to find optimal lambda value
+# Set alpha=1 in Lasso
+cv_model <- cv.glmnet(as.matrix(features[,1:8]),scale(df$`GW-AHD(12/06/22)`), alpha = 1)
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model$lambda.min
+best_lambda
+```
+
+```{r}
+#find coefficients of best model
+
+best_model <- glmnet(as.matrix(features[,1:8]),scale(df$`GW-AHD(12/06/22)`), alpha = 1, lambda = best_lambda)
+coef(best_model)
+```
+
+Hence, the variables that effect on water level variations are the Elevation(m)-AHD, Latitude, Longitude and number of Layers in soil.
+
+```{r}
+# obtain the results by plot
+glmmod <- glmnet(as.matrix(features[,1:8]),scale(df$`GW-AHD(12/06/22)`), alpha=1)
+
+plot1<-plot(glmmod, xvar="lambda",label=TRUE)+abline(v=log(best_lambda), col="red")
+
+```
