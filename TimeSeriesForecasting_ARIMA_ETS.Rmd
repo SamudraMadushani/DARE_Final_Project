@@ -1,0 +1,674 @@
+---
+title: "TimeSeriesForecasting_ARIMA_ETS"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, message=FALSE,warning=FALSE}
+#Importing packages
+library(dplyr)
+library(magrittr)
+library(readr)
+library(ggplot2)
+library(tsibble)
+library(tsfeatures)
+library(feasts)
+library(broom)
+library(fpp3)
+library(patchwork)
+library(ggrepel)
+library(lubridate)
+library(viridisLite)
+library(viridis)
+```
+
+
+```{r, include=FALSE, message=FALSE,warning=FALSE}
+#Import data
+# Ground Water Level Data from 2013-11-15 to 2019-03-28 for GW036334.1.1
+GW036334_1_1data <- read_csv("GW036334.1.1data.csv")
+GW036334_1_1data$Date <- as.Date(GW036334_1_1data$Date, format="%m/%d/%Y")
+GW036334_1_1data <- as_tsibble(GW036334_1_1data)
+
+# Ground Water Level Data from 2015-02-18 to 2018-12-12 for GW093067.1.1
+GW093067_1_1data <- read_csv("GW093067.1.1data.csv")
+GW093067_1_1data$Date <- as.Date(GW093067_1_1data$Date, format="%m/%d/%Y")
+GW093067_1_1data <- as_tsibble(GW093067_1_1data)
+
+# Ground Water Level Data from 2013-11-14 to 2019-03-28 for GW036976.1.2
+GW036976.1.2data <- read_csv("GW036976.1.2data.csv")
+GW036976.1.2data$Date <- as.Date(GW036976.1.2data$Date, format="%m/%d/%Y")
+GW036976.1.2data <- as_tsibble(GW036976.1.2data)
+
+# Ground Water Level Data from 2013-09-24 to 2019-01-16 for GW965569.1.2
+GW965569.1.2data <- read_csv("GW965569.1.2data.csv")
+GW965569.1.2data$Date <- as.Date(GW965569.1.2data$Date, format="%m/%d/%Y")
+GW965569.1.2data <- as_tsibble(GW965569.1.2data)
+```
+
+```{r, message=FALSE,warning=FALSE}
+# Time Series Plots
+
+plot_GW036334_1_1data<-GW036334_1_1data %>%  ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(col="#f0027f")+labs(y= "Waterlevel", x = "Date",title = "GW036334_1_1")
+
+plot_GW093067_1_1data<-GW093067_1_1data %>%  ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(col="#d95f02")+labs(y= "Waterlevel", x = "Date",title = "GW093067_1_1")
+
+plot_GW036976.1.2data<-GW036976.1.2data %>%  ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(col="#1b9e77")+labs(y= "Waterlevel", x = "Date",title = "GW036976.1.2")
+
+plot_GW965569.1.2data<-GW965569.1.2data %>%  ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(col="blue")+labs(y= "Waterlevel", x = "Date",title = "GW965569.1.2")
+
+
+(plot_GW036334_1_1data|plot_GW093067_1_1data)/(plot_GW036976.1.2data|plot_GW965569.1.2data)
+```
+
+```{r, message=FALSE,warning=FALSE}
+# STL decomposition
+dcmp_GW036334_1_1data <- GW036334_1_1data %>% model(stl = STL(WaterLevel))
+STL_GW036334_1_1data<-components(dcmp_GW036334_1_1data) %>% autoplot(col="#f0027f")+labs(title ="GW036334.1.1" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+
+dcmp_GW093067_1_1data <- GW093067_1_1data %>% model(stl = STL(WaterLevel))
+STL_GW093067_1_1data<-components(dcmp_GW093067_1_1data) %>% autoplot(col="#d95f02")+labs(title ="GW093067.1.1" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+
+dcmp_GW036976.1.2data <- GW036976.1.2data %>% model(stl = STL(WaterLevel))
+STL_GW036976.1.2data<-components(dcmp_GW036976.1.2data) %>% autoplot(col="#1b9e77")+labs(title ="GW036976.1.2" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+
+dcmp_GW965569.1.2data <- GW965569.1.2data %>% model(stl = STL(WaterLevel))
+STL_GW965569.1.2data<-components(dcmp_GW965569.1.2data) %>% autoplot(col="blue")+labs(title ="GW965569.1.2" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+
+STL_decom_data<-(STL_GW036334_1_1data|STL_GW093067_1_1data)/(STL_GW036976.1.2data|STL_GW965569.1.2data)
+
+STL_decom_data
+
+```
+
+## Split the data into 70% of training and 30% of testing.
+
+```{r, message=FALSE,warning=FALSE}
+# Split train and test data
+
+train_split_point <- floor(nrow(GW036334_1_1data)*0.8)
+train_wl_GW036334_1_1 <- GW036334_1_1data[1:train_split_point,]
+test_wl_GW036334_1_1 <- GW036334_1_1data[(train_split_point+1):nrow(GW036334_1_1data),]
+
+train_split_point <- floor(nrow(GW093067_1_1data)*0.8)
+train_wl_GW093067_1_1 <- GW093067_1_1data[1:train_split_point,]
+test_wl_GW093067_1_1 <- GW093067_1_1data[(train_split_point+1):nrow(GW093067_1_1data),]
+
+train_split_point <- floor(nrow(GW036976.1.2data)*0.8)
+train_wl_GW036976.1.2 <- GW036976.1.2data[1:train_split_point,]
+test_wl_GW036976.1.2 <- GW036976.1.2data[(train_split_point+1):nrow(GW036976.1.2data),]
+
+train_split_point <- floor(nrow(GW965569.1.2data)*0.8)
+train_wl_GW965569.1.2 <- GW965569.1.2data[1:train_split_point,]
+test_wl_GW965569.1.2 <- GW965569.1.2data[(train_split_point+1):nrow(GW965569.1.2data),]
+
+```
+
+
+```{r, message=FALSE,warning=FALSE}
+# Visualization of train and test set splitting
+Train_Vs_Test_GW036334_1_1data <- GW036334_1_1data %>% ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(size=1,col="#f0027f")+labs(y= "Water Level", x = "Date",title = "GW036334.1.1")+
+  geom_vline(xintercept = as.numeric(as.Date(test_wl_GW036334_1_1$Date[1], format="%m/%d/%Y")), linetype="dashed", 
+             color = "black", size=1.5)+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+Train_Vs_Test_GW093067_1_1data <- GW093067_1_1data %>% ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(size=1,col="#d95f02")+labs(y= "Water Level", x = "Date",title = "GW093067.1.1")+
+  geom_vline(xintercept = as.numeric(as.Date(test_wl_GW093067_1_1$Date[1], format="%m/%d/%Y")), linetype="dashed", 
+             color = "black", size=1.5)+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+Train_Vs_Test_GW036976.1.2data <- GW036976.1.2data %>% ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(size=1,col="#1b9e77")+labs(y= "Water Level", x = "Date",title = "GW036976.1.2")+
+  geom_vline(xintercept = as.numeric(as.Date(test_wl_GW036976.1.2$Date[1], format="%m/%d/%Y")), linetype="dashed", 
+             color = "black", size=1.5)+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+Train_Vs_Test_GW965569.1.2data <- GW965569.1.2data %>% ggplot(aes(x = Date, y = WaterLevel)) +
+  geom_line(size=1,col="#CC6666")+labs(y= "Water Level", x = "Date",title = "GW965569.1.2")+
+  geom_vline(xintercept = as.numeric(as.Date(test_wl_GW965569.1.2$Date[1], format="%m/%d/%Y")), linetype="dashed", 
+             color = "black", size=1.5)+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+Train_Vs_Test<-(Train_Vs_Test_GW036334_1_1data|Train_Vs_Test_GW093067_1_1data)/(Train_Vs_Test_GW036976.1.2data|Train_Vs_Test_GW965569.1.2data)
+
+Train_Vs_Test
+```
+
+```{r, message=FALSE,warning=FALSE}
+# Checking Stationarity
+# acf plot
+
+AC1<-GW036334_1_1data %>% ACF(WaterLevel) %>% autoplot()+labs(title ="GW036334.1.1" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+AC2<-GW093067_1_1data %>% ACF(WaterLevel) %>% autoplot()+labs(title ="GW093067.1.1" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+AC3<-GW036976.1.2data %>% ACF(WaterLevel) %>% autoplot()+labs(title ="GW036976.1.2" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+AC4<-GW965569.1.2data %>% ACF(WaterLevel) %>% autoplot()+labs(title ="GW965569.1.2" )+ theme_minimal()+theme(plot.title=element_text(hjust=0.5))
+
+ACF_PLOTS<-(AC1|AC2)/(AC3|AC4)
+ACF_PLOTS
+```
+
+
+## ARIMA Modeling
+
+```{r, message=FALSE,warning=FALSE}
+# Checking number of seasonal and non-seasonal difference required-by Unit Root Test
+GW036334_1_1Ndiff<-GW036334_1_1data %>%features(WaterLevel, unitroot_ndiffs)
+GW036334_1_1NSdiff<-GW036334_1_1data %>%features(WaterLevel, unitroot_nsdiffs)
+GW036334_1_1Ndiff
+GW036334_1_1NSdiff
+
+GW093067_1_1Ndiff<-GW093067_1_1data %>%features(WaterLevel, unitroot_ndiffs)
+GW093067_1_1NSdiff<-GW093067_1_1data %>%features(WaterLevel, unitroot_nsdiffs)
+GW093067_1_1Ndiff
+GW093067_1_1NSdiff
+
+GW036976.1.2Ndiff<-GW036976.1.2data %>%features(WaterLevel, unitroot_ndiffs)
+GW036976.1.2NSdiff<-GW036976.1.2data %>%features(WaterLevel, unitroot_nsdiffs)
+GW036976.1.2Ndiff
+GW036976.1.2NSdiff
+
+GW965569.1.2Ndiff<-GW965569.1.2data %>%features(WaterLevel, unitroot_ndiffs)
+GW965569.1.2NSdiff<-GW965569.1.2data %>%features(WaterLevel, unitroot_nsdiffs)
+GW965569.1.2Ndiff
+GW965569.1.2NSdiff
+```
+
+```{r, message=FALSE,warning=FALSE}
+# Convert the data into stationary-ACF and PACF plots-GW036334.1.1
+GW036334_1_1data %>% 
+  mutate(dWaterLevel = difference(WaterLevel)) %>% 
+  gg_tsdisplay(dWaterLevel, plot_type='partial')
+
+```
+
+
+```{r, message=FALSE,warning=FALSE}
+# Convert the data into stationary-ACF and PACF plots-GW093067.1.1
+ GW093067_1_1data %>% 
+  mutate(dWaterLevel = difference(WaterLevel)) %>% 
+  mutate(d2WaterLevel = difference(dWaterLevel)) %>% 
+  gg_tsdisplay(d2WaterLevel, plot_type='partial')
+
+```
+
+
+```{r}
+# Convert the data into stationary-ACF and PACF plots-GW036976.1.2
+GW036976.1.2data %>% 
+  mutate(dWaterLevel = difference(WaterLevel)) %>% 
+  gg_tsdisplay(dWaterLevel, plot_type='partial')
+
+```
+
+```{r}
+# Convert the data into stationary-ACF and PACF plots-GW965569.1.2
+GW965569.1.2data %>% 
+  mutate(dWaterLevel = difference(WaterLevel)) %>% 
+  gg_tsdisplay(dWaterLevel, plot_type='partial')
+```
+
+```{r}
+# ARIMA Modeling
+arima_fit_GW036334_1_1 <- train_wl_GW036334_1_1 %>% 
+  model(  arima210 = ARIMA(WaterLevel ~ pdq(2,1,0)),
+          stepwise = ARIMA(WaterLevel),
+          search = ARIMA(WaterLevel, stepwise=FALSE))
+
+# Accuracy Checking
+
+arima_fit_GW036334_1_1 %>% forecast(h = length(test_wl_GW036334_1_1$Date)) %>% accuracy(test_wl_GW036334_1_1) %>% arrange(RMSE)
+
+# Checking the residuals of the lowest accuracy model
+
+report(arima_fit_GW036334_1_1 %>% select(stepwise))
+
+# Residual Analysis
+
+arima_fit_GW036334_1_1 %>% select(stepwise) %>% gg_tsresiduals(lag=36)
+
+# Checking the hypothesis (H0: Residuals are WN vs H1: Residuals show #autocorrelation)
+augment(arima_fit_GW036334_1_1) %>%
+  filter(.model=='stepwise') %>%
+  features(.innov, ljung_box, lag = 10, dof = 3)
+
+# H0 is not rejected. Hence, Residuals are WN
+
+Forecast_GW036334_1_1<-arima_fit_GW036334_1_1 %>% select(stepwise) %>% 
+                        forecast(h = length(test_wl_GW036334_1_1$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW036334_1_1$WaterLevel
+Forecast_GW036334_1_1$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW036334_1_1<-Forecast_GW036334_1_1%>%ggplot(aes(x = Date))+    geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW036334_1_1$`95%`$lower, ymax =    Forecast_GW036334_1_1$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ARIMA: GW036334_1_1")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+
+Plot_AvsFitted_GW036334_1_1
+```
+
+```{r}
+# ARIMA Modeling
+
+arima_fit_GW093067_1_1 <- train_wl_GW093067_1_1 %>% 
+  model(  arima222 = ARIMA(WaterLevel ~ pdq(2,2,2)),
+          stepwise = ARIMA(WaterLevel),
+          search = ARIMA(WaterLevel, stepwise=FALSE))
+
+# Accuracy Checking
+arima_fit_GW093067_1_1 %>% forecast(h = length(test_wl_GW093067_1_1$Date)) %>% accuracy(test_wl_GW093067_1_1) %>% arrange(RMSE)
+
+# Checking the residuals of the lowest accuracy model
+
+report(arima_fit_GW093067_1_1 %>% select(arima222))
+
+# Residual Analysis
+
+arima_fit_GW093067_1_1 %>% select(arima222) %>% gg_tsresiduals(lag=36)
+# Checking the Hypothesis
+augment(arima_fit_GW093067_1_1) %>%
+  filter(.model=='arima222') %>%
+  features(.innov, ljung_box, lag = 10, dof = 3)
+# Reject H0. Hence, residuals are not WN.
+Forecast_GW093067_1_1<-arima_fit_GW093067_1_1 %>% select(arima222) %>% 
+  forecast(h = length(test_wl_GW093067_1_1$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW093067_1_1$WaterLevel
+Forecast_GW093067_1_1$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW093067_1_1<-Forecast_GW093067_1_1%>%ggplot(aes(x = Date))+ 
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW093067_1_1$`95%`$lower, ymax = Forecast_GW093067_1_1$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ARIMA: GW093067_1_1")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+Plot_AvsFitted_GW093067_1_1
+```
+
+```{r}
+# ARIMA Modeling
+
+arima_fit_GW036976.1.2 <- train_wl_GW036976.1.2 %>% 
+  model(  arima012 = ARIMA(WaterLevel ~ pdq(0,1,2)),
+          stepwise = ARIMA(WaterLevel),
+          search = ARIMA(WaterLevel, stepwise=FALSE))
+
+# Accuracy Checking
+arima_fit_GW036976.1.2 %>% forecast(h = length(test_wl_GW036976.1.2$Date)) %>% accuracy(test_wl_GW036976.1.2) %>% arrange(RMSE)
+
+# Checking the residuals of the lowest accuracy model
+
+report(arima_fit_GW036976.1.2 %>% select(arima012))
+
+# Residual Analysis
+
+arima_fit_GW036976.1.2 %>% select(arima012) %>% gg_tsresiduals(lag=36)
+
+# Hypothesis testing
+augment(arima_fit_GW036976.1.2) %>%
+  filter(.model=='arima012') %>%
+  features(.innov, ljung_box, lag = 10, dof = 3)
+# Reject H0. Hence, residuals are WN.
+
+Forecast_GW036976.1.2<-arima_fit_GW036976.1.2 %>% select(arima012) %>% 
+  forecast(h = length(test_wl_GW036976.1.2$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW036976.1.2$WaterLevel
+Forecast_GW036976.1.2$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW036976.1.2<-Forecast_GW036976.1.2%>%ggplot(aes(x = Date))+ 
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW036976.1.2$`95%`$lower, ymax = Forecast_GW036976.1.2$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ARIMA: GW036976.1.2")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+Plot_AvsFitted_GW036976.1.2
+```
+
+```{r}
+# ARIMA Modeling
+arima_fit_GW965569.1.2 <- train_wl_GW965569.1.2 %>% 
+  model(  arima011 = ARIMA(WaterLevel ~ pdq(0,1,1)),
+          stepwise = ARIMA(WaterLevel),
+          search = ARIMA(WaterLevel, stepwise=FALSE))
+
+# Accuracy Checking
+arima_fit_GW965569.1.2 %>% forecast(h = length(test_wl_GW965569.1.2$Date)) %>% accuracy(test_wl_GW965569.1.2) %>% arrange(RMSE)
+
+# Checking the residuals of the lowest accuracy model
+
+report(arima_fit_GW965569.1.2 %>% select(search))
+
+# Residual Analysis
+
+arima_fit_GW965569.1.2 %>% select(search) %>% gg_tsresiduals(lag=36)
+
+# Hypothesis Testing
+
+augment(arima_fit_GW965569.1.2) %>%
+  filter(.model=='search') %>%
+  features(.innov, ljung_box, lag = 10, dof = 3)
+
+# Does not reject H0. Hence, residuals are WN.
+
+Forecast_GW965569.1.2<-arima_fit_GW965569.1.2 %>% select(search) %>% 
+  forecast(h = length(test_wl_GW965569.1.2$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW965569.1.2$WaterLevel
+Forecast_GW965569.1.2$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW965569.1.2<-Forecast_GW965569.1.2%>%ggplot(aes(x = Date))+ 
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW965569.1.2$`95%`$lower, ymax = Forecast_GW965569.1.2$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ARIMA: GW965569.1.2")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+
+Plot_AvsFitted_GW965569.1.2
+
+```
+
+
+## ETS Modeling
+
+```{r}
+fit1<-train_wl_GW036334_1_1 %>%
+  model(ses = ETS(WaterLevel ~ error("A") + trend("N") + season("N")),
+        hlm = ETS(WaterLevel ~ error("A") + trend("N") + season("A")),
+        ahw = ETS(WaterLevel ~ error("A") + trend("A") + season("A")),
+        auto1 = ETS(WaterLevel ~ error("A") + trend("N") + season("M")),
+        auto2 = ETS(WaterLevel ~ error("A") + trend("A") + season("N")),
+        auto3 = ETS(WaterLevel ~ error("A") + trend("A") + season("M")),
+        auto4 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("N")),
+        auto5 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("A")),
+        auto6 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("M")),
+        ses1 = ETS(WaterLevel ~ error("M") + trend("N") + season("N")),
+        hlm1 = ETS(WaterLevel ~ error("M") + trend("N") + season("A")),
+        ahw1 = ETS(WaterLevel ~ error("M") + trend("A") + season("A")),
+        auto11 = ETS(WaterLevel ~ error("M") + trend("N") + season("M")),
+        auto21 = ETS(WaterLevel ~ error("M") + trend("A") + season("N")),
+        auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M")),
+        auto41 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("N")),
+        auto51 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("A")),
+        auto61 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("M"))
+  )
+
+
+fit1 %>% forecast(h = length(test_wl_GW036334_1_1$Date)) %>% accuracy(test_wl_GW036334_1_1) %>% arrange(RMSE)
+
+fit1 %>% select(auto1) %>% gg_tsresiduals(lag=36)
+
+augment(fit1) %>% 
+  features(.innov, ljung_box, lag=24, dof=4)
+
+# auto1 is the best model, but residuals are not WN
+
+Forecast_GW036334_1_1_ETS<-fit1 %>% select(auto1) %>% 
+  forecast(h = length(test_wl_GW036334_1_1$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW036334_1_1$WaterLevel
+Forecast_GW036334_1_1_ETS$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW036334_1_1_ETS<-Forecast_GW036334_1_1_ETS%>%ggplot(aes(x = Date))+  
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW036334_1_1_ETS$`95%`$lower, ymax = Forecast_GW036334_1_1_ETS$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ETS: GW036334_1_1")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+
+Plot_AvsFitted_GW036334_1_1_ETS
+```
+
+
+```{r}
+fit2<-train_wl_GW093067_1_1 %>%
+  model(ses = ETS(WaterLevel ~ error("A") + trend("N") + season("N")),
+        hlm = ETS(WaterLevel ~ error("A") + trend("N") + season("A")),
+        ahw = ETS(WaterLevel ~ error("A") + trend("A") + season("A")),
+        auto1 = ETS(WaterLevel ~ error("A") + trend("N") + season("M")),
+        auto2 = ETS(WaterLevel ~ error("A") + trend("A") + season("N")),
+        auto3 = ETS(WaterLevel ~ error("A") + trend("A") + season("M")),
+        auto4 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("N")),
+        auto5 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("A")),
+        auto6 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("M")),
+        ses1 = ETS(WaterLevel ~ error("M") + trend("N") + season("N")),
+        hlm1 = ETS(WaterLevel ~ error("M") + trend("N") + season("A")),
+        ahw1 = ETS(WaterLevel ~ error("M") + trend("A") + season("A")),
+        auto11 = ETS(WaterLevel ~ error("M") + trend("N") + season("M")),
+        auto21 = ETS(WaterLevel ~ error("M") + trend("A") + season("N")),
+        auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M")),
+        auto41 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("N")),
+        auto51 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("A")),
+        auto61 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("M"))
+  )
+
+
+fit2 %>% forecast(h = length(test_wl_GW093067_1_1$Date)) %>% accuracy(test_wl_GW093067_1_1) %>% arrange(RMSE)
+
+fit2 %>% select(auto31) %>% gg_tsresiduals(lag=36)
+
+# auto31 is the best model, but fails the WN
+
+Forecast_GW093067_1_1_ETS<-fit2 %>% select(auto31) %>% 
+  forecast(h = length(test_wl_GW093067_1_1$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW093067_1_1$WaterLevel
+Forecast_GW093067_1_1_ETS$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW093067_1_1_ETS<-Forecast_GW093067_1_1_ETS%>%ggplot(aes(x = Date))+  
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW093067_1_1_ETS$`95%`$lower, ymax = Forecast_GW093067_1_1_ETS$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ETS: GW093067_1_1")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+Plot_AvsFitted_GW093067_1_1_ETS
+```
+
+
+```{r}
+fit3<-train_wl_GW036976.1.2 %>%
+  model(ses = ETS(WaterLevel ~ error("A") + trend("N") + season("N")),
+        hlm = ETS(WaterLevel ~ error("A") + trend("N") + season("A")),
+        ahw = ETS(WaterLevel ~ error("A") + trend("A") + season("A")),
+        auto1 = ETS(WaterLevel ~ error("A") + trend("N") + season("M")),
+        auto2 = ETS(WaterLevel ~ error("A") + trend("A") + season("N")),
+        auto3 = ETS(WaterLevel ~ error("A") + trend("A") + season("M")),
+        auto4 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("N")),
+        auto5 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("A")),
+        auto6 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("M")),
+        ses1 = ETS(WaterLevel ~ error("M") + trend("N") + season("N")),
+        hlm1 = ETS(WaterLevel ~ error("M") + trend("N") + season("A")),
+        ahw1 = ETS(WaterLevel ~ error("M") + trend("A") + season("A")),
+        auto11 = ETS(WaterLevel ~ error("M") + trend("N") + season("M")),
+        auto21 = ETS(WaterLevel ~ error("M") + trend("A") + season("N")),
+        auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M")),
+        auto41 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("N")),
+        auto51 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("A")),
+        auto61 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("M"))
+  )
+
+
+fit3 %>% forecast(h = length(test_wl_GW036976.1.2$Date)) %>% accuracy(test_wl_GW036976.1.2) %>% arrange(RMSE)
+
+fit3 %>% select(auto31) %>% gg_tsresiduals(lag=36)
+
+# auto31 is the best model
+
+Forecast_GW036976.1.2_ETS<-fit3 %>% select(auto31) %>% 
+  forecast(h = length(test_wl_GW036976.1.2$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW036976.1.2$WaterLevel
+Forecast_GW036976.1.2_ETS$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW036976.1.2_ETS<-Forecast_GW036976.1.2_ETS%>%ggplot(aes(x = Date))+  
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW036976.1.2_ETS$`95%`$lower, ymax = Forecast_GW036976.1.2_ETS$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ETS: GW036976.1.2")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+
+Plot_AvsFitted_GW036976.1.2_ETS
+```
+
+
+```{r}
+fit4<-train_wl_GW965569.1.2 %>%
+  model(ses = ETS(WaterLevel ~ error("A") + trend("N") + season("N")),
+        hlm = ETS(WaterLevel ~ error("A") + trend("N") + season("A")),
+        ahw = ETS(WaterLevel ~ error("A") + trend("A") + season("A")),
+        auto1 = ETS(WaterLevel ~ error("A") + trend("N") + season("M")),
+        auto2 = ETS(WaterLevel ~ error("A") + trend("A") + season("N")),
+        auto3 = ETS(WaterLevel ~ error("A") + trend("A") + season("M")),
+        auto4 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("N")),
+        auto5 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("A")),
+        auto6 = ETS(WaterLevel ~ error("A") + trend("Ad") + season("M")),
+        ses1 = ETS(WaterLevel ~ error("M") + trend("N") + season("N")),
+        hlm1 = ETS(WaterLevel ~ error("M") + trend("N") + season("A")),
+        ahw1 = ETS(WaterLevel ~ error("M") + trend("A") + season("A")),
+        auto11 = ETS(WaterLevel ~ error("M") + trend("N") + season("M")),
+        auto21 = ETS(WaterLevel ~ error("M") + trend("A") + season("N")),
+        auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M")),
+        auto41 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("N")),
+        auto51 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("A")),
+        auto61 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("M"))
+  )
+
+
+
+fit4 %>% forecast(h = length(test_wl_GW965569.1.2$Date)) %>% accuracy(test_wl_GW965569.1.2) %>% arrange(RMSE)
+
+fit4 %>% select(auto41) %>% gg_tsresiduals(lag=36)
+
+
+# auto41 is the best model
+
+
+Forecast_GW965569.1.2_ETS<-fit4 %>% select(auto41) %>% 
+  forecast(h = length(test_wl_GW965569.1.2$Date))%>%hilo(level=c(95))
+Actual_values<-test_wl_GW965569.1.2$WaterLevel
+Forecast_GW965569.1.2_ETS$Actual_values<-Actual_values
+
+colors <- c("Actual values" = "blue", "mean" = "green")
+
+Plot_AvsFitted_GW965569.1.2_ETS<-Forecast_GW965569.1.2_ETS%>%ggplot(aes(x = Date))+  
+  geom_line(aes(y = .mean,color="mean"),size=2)+  
+  geom_line(aes(y = Actual_values,color="Actual values"),size=1.5)+
+  geom_ribbon(aes(ymin = Forecast_GW965569.1.2_ETS$`95%`$lower, ymax = Forecast_GW965569.1.2_ETS$`95%`$upper), alpha = 0.25, fill="green")+
+  labs(y= "Waterlevel", x = "Date",color = "Legend",title = "ETS: GW965569.1.2")+
+  scale_color_manual(values = colors)+theme(plot.title=element_text(hjust=0.5))
+
+Plot_AvsFitted_GW965569.1.2_ETS
+```
+
+
+# Comparision of best modeling structure out of ARIMA and ETS
+
+```{r}
+# Time Series Cross Validation
+
+train_wl_GW036334_1_1 %>% 
+  slice(-n()) %>% 
+  stretch_tsibble(.init = 1560,.step = 1) %>% 
+  model(
+    stepwise = ARIMA(WaterLevel),
+    auto1 = ETS(WaterLevel ~ error("A") + trend("N") + season("M"))
+  ) %>%
+  forecast(h = 1) %>%
+  accuracy(train_wl_GW036334_1_1,by=c(".model")) %>%
+  select(.model, RMSE:MAPE) %>% 
+  arrange(MAPE)
+
+####################################################################
+# Time Series Cross Validation
+
+train_wl_GW093067_1_1 %>% 
+  slice(-n()) %>% 
+  stretch_tsibble(.init = 1107,.step = 1) %>% 
+  model(
+    arima222 = ARIMA(WaterLevel ~ pdq(2,2,2)),
+    auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M"))
+  ) %>%
+  forecast(h = 1) %>%
+  accuracy(train_wl_GW093067_1_1,by=c(".model")) %>%
+  select(.model, RMSE:MAPE) %>% 
+  arrange(MAPE)
+
+####################################################################
+# Time Series Cross Validation
+
+train_wl_GW036976.1.2 %>% 
+  slice(-n()) %>% 
+  stretch_tsibble(.init = 1544,.step = 1) %>% 
+  model(
+    arima012 = ARIMA(WaterLevel ~ pdq(0,1,2)),
+    auto31 = ETS(WaterLevel ~ error("M") + trend("A") + season("M"))
+  ) %>%
+  forecast(h = 1) %>%
+  accuracy(train_wl_GW036976.1.2,by=c(".model")) %>%
+  select(.model, RMSE:MAPE) %>% 
+  arrange(MAPE)
+
+####################################################################
+# Time Series Cross Validation
+
+train_wl_GW965569.1.2 %>% 
+  slice(-n()) %>% 
+  stretch_tsibble(.init = 1544,.step = 1) %>% 
+  model(
+    search = ARIMA(WaterLevel, stepwise=FALSE),
+    auto41 = ETS(WaterLevel ~ error("M") + trend("Ad") + season("N"))
+  ) %>%
+  forecast(h = 1) %>%
+  accuracy(train_wl_GW965569.1.2,by=c(".model")) %>%
+  select(.model, RMSE:MAPE) %>% 
+  arrange(MAPE)
+
+```
+
+
+```{r}
+# Residual plots
+
+res1<-arima_fit_GW036334_1_1 %>% select(stepwise) %>% residuals()
+res1_PLOT1<-res1 %>% ACF() %>% autoplot(size = 3)+
+  labs(y= "acf", x = "lag",title = "GW036334.1.1")+
+  theme(plot.title=element_text(hjust=0.5))
+
+res2<-arima_fit_GW093067_1_1 %>% select(arima222) %>% residuals()
+res2_PLOT1<-res2 %>% ACF() %>% autoplot(size = 3)+
+  labs(y= "acf", x = "lag",title = "GW093067.1.1")+
+  theme(plot.title=element_text(hjust=0.5))
+
+res3<-arima_fit_GW036976.1.2 %>% select(arima012) %>% residuals()
+res3_PLOT1<-res3 %>% ACF() %>% autoplot(size = 3)+
+  labs(y= "acf", x = "lag",title = "GW036976.1.2")+
+  theme(plot.title=element_text(hjust=0.5))
+
+res4<-arima_fit_GW965569.1.2 %>% select(search) %>% residuals()
+res4_PLOT1<-res4 %>% ACF() %>% autoplot(size = 3)+
+  labs(y= "acf", x = "lag",title = "GW965569.1.2")+
+  theme(plot.title=element_text(hjust=0.5))
+
+Residual_Plots<-(res1_PLOT1|res2_PLOT1)/(res3_PLOT1|res4_PLOT1)
+
+Residual_Plots
+
+```
