@@ -1,0 +1,146 @@
+---
+title: "PCA_feature-based-visualization"
+output: pdf_document
+---
+---
+title: "PCA_feature-based-visualization"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE,warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, message=FALSE,warning=FALSE}
+#Importing packages
+library(dplyr)
+library(magrittr)
+library(readr)
+library(ggplot2)
+library(tsibble)
+library(tsfeatures)
+library(feasts)
+library(broom)
+library(fpp3)
+library(viridisLite)
+library(viridis)
+```
+
+
+```{r}
+#Load data for water level variation of all boreholes in Namoi River Basin
+dt <- read_csv("TSvizDATA.csv")
+dt$Date <- tsibble::yearmonth(dt$Date, format="%m/%d/%Y")
+
+dt<-select(dt, c(WL,Date,Borehole))
+```
+
+# Lets see how the water level of each of the boreholes varies by Heat map Visualization.
+
+```{r}
+int_plt<-ggplot(dt, aes(x=Date, y=Borehole)) +
+    geom_tile(aes(fill = WL)) +
+    scale_fill_viridis(option="magma") +
+    labs(title = "Water Level Variation-Namoi River Basin",y = "Borehole") +
+    theme_light()+ theme(legend.position = 'right',axis.ticks.y =     element_blank(),axis.text.y = element_blank(),plot.title = element_text(hjust = 0.5))
+
+int_plt
+```
+
+Water levels in Namoi River Basin Region varies in a huge range. Hence, it is impossible to identify the pattern variation much more clearly. Hence, we apply the minimax transformation for each series separately to get an idea about water level variations.
+
+```{r}
+borehole_WL <- dt %>% select(WL, Borehole)
+# Transform the data into 0-1 range to see the pattern much more clearly.
+borehole_WL2 <- borehole_WL %>%
+  group_by(Borehole) %>%
+  summarise(
+    MaxWLByBorehole = max(WL, na.rm = T),
+    MinWLByBorehole = min(WL, na.rm = T)
+  ) %>%
+  arrange(Borehole)
+
+New_DF<-merge(dt,borehole_WL2,by='Borehole')
+New_DF$Water_Level <- (New_DF$WL-New_DF$MinWLByBorehole)/(New_DF$MaxWLByBorehole-New_DF$MinWLByBorehole)
+
+HMT2<-ggplot(New_DF, aes(x=Date, y=Borehole)) +
+    geom_tile(aes(fill = Water_Level)) +
+    scale_fill_viridis(option="magma") +
+    labs(title = "Water Level Variation-Namoi River Basin",y = "Borehole") +
+    theme_light()+ theme(legend.position = 'right',axis.ticks.y =     element_blank(),axis.text.y = element_blank(),plot.title = element_text(hjust = 0.5))
+
+
+HMT2
+```
+From this heat map visualization, it is impossible to get an idea about time series pattern variations. Hence, next we are going to consider feature based visualization.
+
+## Feature-based visualization
+
+```{r}
+# Extracting time series features from water level variation time series
+library(feasts)
+library(tsibble)
+# Consider the data of boreholes without missing values
+data_pca <- read_csv("PCAdata.csv")
+data_pca<-select(data_pca, c(WL,Date,Borehole))
+Month<-tsibble::yearmonth(data_pca$Date)
+BH<-data_pca$Borehole
+Water<-data_pca$WL
+data_all<-tibble(Month,BH,Water)
+data_all<-data_all%>% as_tsibble(key = BH,index=Month)
+pca_features <-data_all %>% features(Water, feature_set(pkgs = "feasts"))
+
+```
+
+
+```{r, message=FALSE,warning=FALSE}
+pca_features
+# Removing the boreholes which contains "NA" as time series features
+pca_features <- pca_features %>% filter(`BH`!= "GW021266.3.4")%>%     filter(`BH`!= "GW093000.1.1")%>% 
+  filter(`BH`!= "GW030136.1.1")%>% 
+  filter(`BH`!= "GW036215.1.3")%>%
+  filter(`BH`!= "GW093002.1.1")%>% 
+  filter(`BH`!= "GW093008.1.1")%>%
+  filter(`BH`!= "GW093013.1.1")%>% 
+  filter(`BH`!= "GW093021.1.1")%>%
+  filter(`BH`!= "GW093028.1.1")%>% 
+  filter(`BH`!= "GW093029.1.1")%>%
+  filter(`BH`!= "GW093033.1.1")%>% 
+  filter(`BH`!= "GW093039.1.1")%>%
+  filter(`BH`!= "GW093042.1.1")
+
+# Apply PCA
+library(broom)
+library(dplyr)
+pcsW <- pca_features %>%
+  dplyr::select(-c(1,2)) %>%
+  dplyr::select(-c("zero_run_mean","zero_start_prop","zero_end_prop","bp_pvalue","lb_pvalue")) %>%
+  prcomp(scale = TRUE) %>%
+  augment(pca_features)
+
+# Labelling for giving different colours for selected boreholes
+
+SorN<-c(rep("N",47),"Y",rep("N",12),"Y",rep("N",5),"Y",rep("N",15),"Y",rep("N",4))
+
+AA<-pcsW
+
+AA$YN<-SorN
+library(ggplot2)
+library(ggrepel)
+
+Feature_variatn_plot1<-pcsW %>%
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = BH, label=BH))     + geom_point(size=3) +
+  theme(aspect.ratio = 1)+
+  geom_text_repel(aes(label=BH), max.overlaps = Inf)+
+  labs(x="PC1", y = "PC2",title = "Feature-based visualization")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="none")
+
+Feature_variatn_plot2<-AA %>%
+  ggplot(aes(x = .fittedPC1, y = .fittedPC2, col = YN))     + geom_point(size=4) +
+  theme(aspect.ratio = 1)+
+  labs(x="PC1", y = "PC2",title = "Feature-based visualization")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="none")+  scale_color_manual(breaks = c("Y", "N"),
+                                                                                            values=c("blue","#f0027f"))
+Feature_variatn_plot1
+Feature_variatn_plot2
+```
