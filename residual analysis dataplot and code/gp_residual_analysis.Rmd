@@ -1,0 +1,50 @@
+```{r}
+library(fpp3)
+library(ggplot2)
+library(tsibble)
+library(ggpubr)
+library(forecast)
+```
+```{r}
+# produce the residual analysis plots take GW036334.1.1 as an example
+
+# pre-process the data
+df <- fm4_334_res
+df$Date <- as.Date(df$Date)
+df %>%
+  dplyr::select(date=Date, residual = residual,fitted=fitted) -> fm4_334_tbl
+fm4_334_tbl %>% as_tsibble(index = date) -> fm4_334_tbl_ts
+
+print(fm4_334_tbl_ts)
+```
+
+
+
+```{r}
+# histogram of the residuals
+gghistogram(fm4_334_tbl_ts$residual) + ggtitle("Histogram of residuals")+xlab("residuals")
+```
+```{r}
+ggAcf(fm4_334_tbl_ts[,1:2],lag=200) + ggtitle("ACF of residuals")
+ggPacf(fm4_334_tbl_ts[,1:2],lag=20)+ ggtitle("PACF of residuals")
+
+```
+```{r}
+# box-test for white noise hypothesis
+Box.test(fm4_334_tbl_ts$residual, lag=200, fitdf=0)
+```
+
+```{r}
+# Scale-location plot
+qplot(fitted,sqrt(abs(residual-mean(residual))/sd(residual)),data=fm4_334_tbl)+geom_smooth(method = "loess",size=0.5)+
+ # geom_line(aes(y=fitted))+
+  xlab("(normalised) fitted values")+
+  ylab(expression(sqrt("standardised residuals")))+
+  ggtitle("Scale-Location")
+# residuals-fitted plot
+qplot(fitted,abs(residual),data=fm4_334_tbl)+geom_smooth(method = "loess",size=0.5)+
+  # geom_line(aes(y=res)+
+  xlab("(normalised) fitted values")+
+  ylab("|residuals|")+
+  ggtitle("Residuals vs. Fitted(normalised)")
+```
