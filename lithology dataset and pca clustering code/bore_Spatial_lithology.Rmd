@@ -1,0 +1,152 @@
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(GGally)
+library(cluster)    # clustering algorithms
+library(factoextra)
+library(useful)
+```
+
+```{r}
+# pre-process data
+bole_layerfeatures. <- read.csv("~/Desktop/bole_layerfeatures.csv", header=FALSE)
+df <- bole_layerfeatures.
+colnames(df) <- c(df[1,])
+df <- df[-1,]
+df[,2:74] <- lapply(df[,2:74],as.numeric)
+df[is.na(df)] <- 0
+df <- as.data.frame(df)
+df$Lat <- -df$Lat
+head(df)
+```
+
+
+```{r}
+# violin plot 
+df_wrap_1 <- df %>%
+  select(num_Lithology_type,total_layer) %>% 
+  gather(key = "variable", value = "value")
+# head(df)
+ggplot(df_wrap_1, aes(x = variable, y = value,fill=variable)) + 
+  geom_violin(alpha=0.5)+
+  geom_boxplot(alpha=0.1,)
+```
+
+
+```{r}
+# pariplots for the first 8 variables
+ggpairs(df[,2:8],lower = list(continuous = wrap("points", color = "steelblue", size=0.1)), 
+        diag = list(continuous = wrap("densityDiag",  color = "black", alpha = 0.5) ))
+```
+
+```{r}
+# prepare features for clustering and pca
+features <- df[,-1]
+features <- features[,-4]
+#  normalisation
+features <- scale(features)
+row.names(features) <- df$Borehole
+
+```
+
+
+```{r}
+colnames(features)[4] <- "total_thickness"
+distance <- get_dist(features,"euclidean")
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"),lab_size=5)
+```
+
+```{r}
+# top 10 features affecting the first two principal components
+df.pca <- prcomp(features,  scale = FALSE)
+# fviz_pca_var(df.pca,alpha.ind = 0.1)
+# fviz_pca_ind(df.pca,select.ind=list(name=c("GW036334")))
+# fviz_pca_biplot(df.pca,invisible ="ind")
+fviz_pca_var(df.pca,alpha.ind = 1,select.var  = list(contrib = 10),repel = FALSE)+
+  theme(text = element_text(size = 7.5),
+        axis.title = element_text(size = 7.5),
+        axis.text = element_text(size = 7.5))
+```
+
+
+
+```{r}
+# silhouette coefficients
+fviz_nbclust(features, kmeans, method = "silhouette",k.max=10)
+```
+
+
+
+```{r}
+# clustering results
+set.seed(12345)
+k3 <- kmeans(features, centers = 3)
+fviz_cluster(k3, data = features,labelsize=6)
+
+```
+
+
+If some clusters are very close together and the other clusters are far apart, it tends to underestimate.
+```{r}
+library(caret)
+```
+
+
+```{r}
+borehole_clust <- borehole.ind[1:133,1:10]
+borehole_clust <- na.omit(borehole_clust)
+#borehole_clust$Borehole_id <- gsub(" ", "", borehole_clust$Borehole_id, fixed = TRUE)
+borehole_clust$above_thickness <- as.numeric(borehole_clust$above_thickness)
+borehole_clust$below_thickness <- as.numeric(borehole_clust$below_thickness)
+borehole_clust$at_thickness <- as.numeric(borehole_clust$at_thickness)
+borehole_clust$Lithology_above[101] <- "Sand"
+row.names(borehole_clust) <- borehole_clust$Borehole_id
+borehole_clust <- borehole_clust[,2:10]
+borehole_clust$Lithology_at_water_level <- as.factor(borehole_clust$Lithology_at_water_level)
+borehole_clust$Lithology_above <- as.factor(borehole_clust$Lithology_above)
+borehole_clust$Lithology_below <- as.factor(borehole_clust$Lithology_below)
+borehole_clust$at_thickness<- as.numeric(borehole_clust$at_thickness)
+```
+
+```{r}
+library(caret)
+borehole_clust$gwd_bg <- scale(borehole_clust$gwd_bg)
+borehole_clust$Elevation<- scale(borehole_clust$Elevation)
+borehole_clust$gw_ahd <- scale(borehole_clust$gw_ahd)
+borehole_clust$at_thickness <- scale(borehole_clust$at_thickness)
+borehole_clust$above_thickness <- scale(borehole_clust$above_thickness)
+borehole_clust$below_thickness <- scale(borehole_clust$below_thickness)
+dmy <- dummyVars(" ~ .", data = borehole_clust, fullRank = T)
+dat_transformed <- data.frame(predict(dmy, newdata = borehole_clust))
+glimpse(dat_transformed)
+```
+
+```{r}
+
+distance <- get_dist(dat_transformed,"euclidean")
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"),lab_size=5)
+```
+
+```{r}
+# df.pca <- prcomp(features,  scale = FALSE)
+# fviz_pca_var(df.pca)
+# fviz_pca_biplot(df.pca,invisible ="ind")
+```
+
+
+```{r}
+fviz_nbclust(dat_transformed, kmeans, method = "silhouette",k.max=10)
+```
+
+
+```{r}
+# set.seed(2)
+k3 <- kmeans(dat_transformed[,1:3], centers = 3)
+fviz_cluster(k3, data = dat_transformed,labelsize=4)
+dt_ac <- cbind(dat_transformed[,1:3],k3$cluster)
+```
+
+
+
+
+
